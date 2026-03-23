@@ -306,9 +306,11 @@ export async function POST(req: NextRequest) {
     // Extract message text and sender
     const rawText = extractText(payload);
     const userPhone = extractSenderPhone(payload);
+    const blooNumber = payload.internal_id ? String(payload.internal_id).trim() : null;
 
     console.log("[BlooWebhook] Extracted text:", rawText);
-    console.log("[BlooWebhook] User phone:", userPhone);
+    console.log("[BlooWebhook] User phone (external_id):", userPhone);
+    console.log("[BlooWebhook] Bloo number (internal_id):", blooNumber);
 
     if (!rawText) {
       console.log("[BlooWebhook] No message text, returning 200");
@@ -319,6 +321,10 @@ export async function POST(req: NextRequest) {
       console.log("[BlooWebhook] No user phone found, returning 200");
       return NextResponse.json({ ok: true }, { status: 200 });
     }
+
+    // ⚠️ IMPORTANT: Use Bloo number (internal_id) for replies, not user's personal number
+    const replyTo = blooNumber || userPhone;
+    console.log("[BlooWebhook] Will send replies to:", replyTo, blooNumber ? "(Bloo number)" : "(user personal number fallback)");
 
     // Normalize phone and look up user
     const normalizedPhone = normalizePhone(String(userPhone));
@@ -379,7 +385,7 @@ export async function POST(req: NextRequest) {
           
           if (conversationalReply) {
             console.log("[BlooWebhook] 💬 Sending conversational response:", conversationalReply);
-            const sent = await sendBlooMessage(normalizedPhone, conversationalReply);
+            const sent = await sendBlooMessage(replyTo, conversationalReply);
             console.log("[BlooWebhook] Conversational message send result:", sent);
             return NextResponse.json({ ok: true }, { status: 200 });
           }
@@ -399,7 +405,7 @@ export async function POST(req: NextRequest) {
       const randomReply = fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)];
       
       console.log("[BlooWebhook] 📢 Sending fallback response:", randomReply);
-      const fallbackSent = await sendBlooMessage(normalizedPhone, randomReply);
+      const fallbackSent = await sendBlooMessage(replyTo, randomReply);
       console.log("[BlooWebhook] Fallback message send result:", fallbackSent);
       
       return NextResponse.json({ ok: true }, { status: 200 });
@@ -467,7 +473,7 @@ export async function POST(req: NextRequest) {
         }
 
         console.log("[BlooWebhook] Task created");
-        await sendBlooMessage(normalizedPhone, `✅ Task created: ${analysis.title}`);
+        await sendBlooMessage(replyTo, `✅ Task created: ${analysis.title}`);
         return NextResponse.json({ ok: true }, { status: 200 });
       } catch (error) {
         console.log("[BlooWebhook] Task creation error:", error);
@@ -496,7 +502,7 @@ export async function POST(req: NextRequest) {
         }
 
         console.log("[BlooWebhook] Goal created");
-        await sendBlooMessage(normalizedPhone, `🎯 Goal created: ${analysis.title}`);
+        await sendBlooMessage(replyTo, `🎯 Goal created: ${analysis.title}`);
         return NextResponse.json({ ok: true }, { status: 200 });
       } catch (error) {
         console.log("[BlooWebhook] Goal creation error:", error);
@@ -549,7 +555,7 @@ export async function POST(req: NextRequest) {
             progress: 0,
           });
 
-          await sendBlooMessage(normalizedPhone, `✅ Task created: ${analysis.title}`);
+          await sendBlooMessage(replyTo, `✅ Task created: ${analysis.title}`);
         }
 
         return NextResponse.json({ ok: true }, { status: 200 });
@@ -573,7 +579,7 @@ export async function POST(req: NextRequest) {
         }
 
         console.log("[BlooWebhook] Event created");
-        await sendBlooMessage(normalizedPhone, `📅 Event created: ${analysis.title}`);
+        await sendBlooMessage(replyTo, `📅 Event created: ${analysis.title}`);
         return NextResponse.json({ ok: true }, { status: 200 });
       } catch (error) {
         console.log("[BlooWebhook] Event creation error:", error);
