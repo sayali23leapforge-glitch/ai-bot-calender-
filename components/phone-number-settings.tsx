@@ -58,7 +58,7 @@ export function PhoneNumberSettings() {
     <div className="p-4 space-y-4 border rounded-lg">
       <h3 className="text-lg font-semibold">Link Phone for iMessage</h3>
       <p className="text-sm text-gray-600">
-        Enter your phone number in E.164 format (e.g., +919920261793) to enable iMessage integration
+        Enter your phone number in E.164 format (e.g., +12025551234) to enable iMessage integration
       </p>
       <div className="flex gap-2">
         <Input

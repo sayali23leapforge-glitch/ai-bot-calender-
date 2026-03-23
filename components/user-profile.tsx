@@ -332,7 +332,7 @@ export function UserProfile() {
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Use E.164 format (e.g., +91 1234567890). This number will receive iMessage and create tasks/goals/events automatically.
+              Use E.164 format (e.g., +1 2025551234). This number will receive iMessage and create tasks/goals/events automatically.
             </p>
           </div>
 
