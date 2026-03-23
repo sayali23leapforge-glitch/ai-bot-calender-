@@ -205,10 +205,42 @@ function extractFirstJsonObject(text: string): any | null {
   return null;
 }
 
-// =====================
-// Messy input normalizer
-// =====================
-function normalizeUserTextForLLM(input: string): string {
+function isConversationOnlyMessage(message: string): boolean {
+  const msg = message.trim().toLowerCase();
+  
+  // Greetings and casual chat
+  if (/^(hi|hey|hello|howdy|yo|what's up|whatsup|sup|greetings)(\s|!|\?)?$/.test(msg)) return true;
+  if (/^(good morning|good afternoon|good evening|good night|good day)(\s|!)?/.test(msg)) return true;
+  
+  // Questions that are NOT about creation (asking for information/clarification)
+  const questionPatterns = [
+    /^(did you|have you|did i|can you|what did).*(\?)?$/,  // "did you create", "have you", etc.
+    /^(what|when|where|why|how).*(\?)?$/,  // "what", "when", etc. - ask for info
+    /^(tell me|explain|describe|clarify).*(\?)?$/,  // asking for explanation
+    /^(are you|is it|is there).*(\?)?$/,  // yes/no questions
+  ];
+  
+  if (questionPatterns.some(p => p.test(msg))) {
+    // But NOT if it's clearly asking to CREATE something
+    const creationKeywords = /^(create|make|add|set|schedule|plan|book|reserve|request)(\s|$)/;
+    if (!creationKeywords.test(msg)) return true;
+  }
+  
+  // Random chat or responses
+  if (/^(lol|haha|hahaha|nice|cool|awesome|thanks|thank you|no|yes|ok|okay|sure)(\s|!|\?)?$/.test(msg)) return true;
+  
+  // Keep-alive or filler messages
+  if (msg.length < 5) return true;  // Very short messages are likely not task creation
+  
+  return false;
+}
+
+// Helper to detect if message is requesting creation
+function isCreationRequest(message: string): boolean {
+  const msg = message.trim().toLowerCase();
+  const creationKeywords = /\b(create|make|add|set|schedule|plan|book|reserve|request|send|remind|new|build|organize|list|prepare)\b/;
+  return creationKeywords.test(msg);
+}
   let s = (input || "").trim();
   if (!s) return s;
   s = s.replace(/\b(tmrw|tmrw\.|tom)\b/gi, "tomorrow");
@@ -686,6 +718,7 @@ type PlannerItem =
 
 type PlannerOutput = {
   assistantText?: string;
+  isConversationOnly?: boolean;
   items: PlannerItem[];
 };
 
@@ -869,60 +902,80 @@ If the user says "it/that/this" and does NOT provide a clear title:
     const plannerSystem = `
 You are the "Planner" for a personal assistant.
 
-Return ONLY valid JSON object:
+CRITICAL: Return ONLY a valid JSON object:
 {
-  "assistantText": string (optional),
+  "assistantText": string (optional, for clarifications/questions),
+  "isConversationOnly": boolean (if true: user is chatting/asking, NOT requesting creation),
   "items": [ ...PlannerItem ]
 }
 
-CRITICAL:
-- Create actions ONLY for the LATEST user message.
-- You MAY read prior messages only to resolve references like "move it to 7pm" (which event?).
-- NEVER re-emit past tasks/events again.
-- If ambiguous and you must ask a question: respond with assistantText and items: [].
+=== RULES FOR isConversationOnly ===
+Set isConversationOnly=true ONLY if the message is:
+- A greeting ("Hi", "Hello", "Hey")
+- A casual response ("Thanks", "Cool", "Ok", "Sure")
+- A question seeking information (NOT creation): "Did you create...", "What is...", "When is..."
+- Random chatter or filler messages
+- Asking clarifying questions about existing items
+
+Set isConversationOnly=false if the message clearly requests creation/action:
+- "Create a task called X"
+- "Schedule a meeting"
+- "Add X to my list"
+- "Make a note about X"
+
+=== CRITICAL RULES FOR ITEMS ===
+- ONLY emit items if isConversationOnly=false
+- If isConversationOnly=true, ALWAYS set items: [] (empty array)
+- Create actions ONLY for the LATEST user message
+- NEVER re-emit past tasks/events again
+- Filter out creation attempts when user is just chatting
+
+=== MESSAGE ANALYSIS ===
+LATEST USER MESSAGE:
+"""${lastUserText}"""
+
+Before planning, ask yourself:
+1. Is this a greeting or casual message? → isConversationOnly=true
+2. Is this seeking information (not creating)? → isConversationOnly=true
+3. Does this request creation/action? → isConversationOnly=false
+4. Is this a follow-up to a past topic? → Check context, may be conversation-only
 
 ABSOLUTE DATE RULE:
-- For ANY event/task due date, output a real date string in YYYY-MM-DD.
-- Convert words like "today" and "tomorrow" into YYYY-MM-DD.
-- If user gives weekday without a clear date, ask a follow-up question instead of guessing.
+- For ANY event/task due date, output a real date string in YYYY-MM-DD
+- Convert words like "today" and "tomorrow" into YYYY-MM-DD
+- If user gives weekday without a clear date, ask a follow-up question instead of guessing
 
 TIME EXTRACTION FOR EVENTS:
-- ALWAYS look for time mentions in user message (e.g., "2pm", "14:00", "2:30 pm", "at 3", "3 o'clock").
-- Convert times to HH:MM format (24-hour): "2pm" → "14:00", "2:30am" → "02:30", "9" → "09:00"
-- If time is mentioned, ALWAYS include "time" field in event (never omit).
-- If NO time mentioned, OMIT the "time" field (creates all-day event).
-- For "meeting at 7pm", extract time="19:00".
-- For "event on Jan 10 at 3:30pm", extract date="2026-01-10" and time="15:30".
+- ALWAYS look for time mentions in user message (e.g., "2pm", "14:00", "2:30 pm", "at 3")
+- Convert times to HH:MM format (24-hour): "2pm" → "14:00", "2:30am" → "02:30"
+- If time is mentioned, ALWAYS include "time" field in event (never omit)
+- If NO time mentioned, OMIT the "time" field (creates all-day event)
 
 PRIORITY EXTRACTION:
-- Look for urgency/priority words in user message.
+- Look for urgency/priority words in user message
 - "critical", "urgent", "asap" => priority: "critical"
 - "high priority", "important" => priority: "high"
 - "medium", "normal" => priority: "medium"
 - "low", "whenever" => priority: "low"
 - If no priority word mentioned, default to "medium"
-- Always include priority field in task/event items (never omit).
 
-Rules:
-- If user asks "agenda/calendar today/tomorrow/this week" => emit kind="query_agenda_v2" (preferred).
-- If user asks "when am I free / available / free slots" => query_agenda_v2 with includeFreeSlots=true.
-- If message contains multiple intents, emit multiple items.
-- Goal/objective/target (e.g., "create goal", "goal: lose weight") => kind="goal"
-- Meeting/appointment/event with date/time => kind="event" (or update_event if rescheduling).
-- Task/to-do/action items => kind="task" and infer listName if missing.
-- Create task list/category => kind="create_task_list" with name field
-- For tasks: infer listName from (Work/Study/Health/Finance/Shopping/Personal/Quick Tasks) unless user explicitly provides one.
-- Keep titles short; put details in notes/description.
-- Output must be strict JSON (no code fences, no trailing commas).
+Rules for items:
+- If user asks "agenda/calendar today/tomorrow/this week" => kind="query_agenda_v2"
+- If user asks "when am I free / available / free slots" => query_agenda_v2 with includeFreeSlots=true
+- If message contains multiple intents, emit multiple items
+- Goal/objective/target => kind="goal"
+- Meeting/appointment/event with date/time => kind="event" or update_event
+- Task/to-do/action items => kind="task"
+- Create task list => kind="create_task_list"
+- For tasks: infer listName from context (Work/Study/Health/Shopping/Personal)
+- Keep titles short; put details in notes/description
+- Output must be strict JSON (no code fences, no trailing commas)
 
 Timezone: ${tz}
 Now ISO: ${new Date().toISOString()}
 
 ${recentEntitiesBlock}
 ${durationHint}
-
-LATEST USER MESSAGE:
-"""${lastUserText}"""
 `.trim();
 
     const planner = await callGemini(geminiApiKey, [
@@ -958,6 +1011,46 @@ LATEST USER MESSAGE:
         requestId: rid,
       } satisfies ChatApiResponse);
     }
+
+    // --- CONVERSATION-ONLY MESSAGE HANDLING ---
+    if ((plan as any).isConversationOnly === true) {
+      console.log("[/api/chat] Detected conversation-only message, generating natural response");
+      
+      // Call Gemini to generate a conversational response (no creation actions)
+      const conversationSystem = `You are a friendly, helpful AI assistant. The user is chatting with you for conversation, information, or clarification.
+
+Respond naturally and conversationally. Be brief, friendly, and helpful.
+- For greetings: return a warm greeting back
+- For questions: answer helpfully if you can
+- For casual chatter: engage naturally
+- For clarifications: provide clear explanations
+
+Keep responses concise (1-2 sentences usually).`;
+
+      const conversationResp = await callGemini(geminiApiKey, [
+        { role: "system", content: conversationSystem },
+        ...contextMessages
+      ]);
+
+      if (!conversationResp.ok) {
+        return NextResponse.json({
+          assistantText: "I'm having trouble responding right now. Please try again.",
+          toolCalls: [],
+          requestId: rid,
+        } satisfies ChatApiResponse);
+      }
+
+      const conversationalText = conversationResp.data?.choices?.[0]?.message?.content || "Got it!";
+
+      console.log("[/api/chat] Conversational response sent:", { rid, responseLength: conversationalText?.length });
+
+      return NextResponse.json({
+        assistantText: conversationalText,
+        toolCalls: [],
+        requestId: rid,
+      } satisfies ChatApiResponse);
+    }
+    // --- END CONVERSATION-ONLY HANDLING ---
 
     // Fix up ambiguous titleQuery using RecentEntities
     const fixedItems: PlannerItem[] = (plan.items || []).map((it: any) => {
