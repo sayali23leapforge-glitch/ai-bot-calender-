@@ -4,64 +4,6 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Send welcome message via Blooio API
- */
-async function sendWelcomeMessageViaBlooio(phone: string): Promise<boolean> {
-  try {
-    const BLOO_API_KEY = process.env.BLOO_API_KEY;
-    if (!BLOO_API_KEY) {
-      console.log("[PhoneUpdate] Bloo API key not configured");
-      return false;
-    }
-
-    const normalizedPhone = phone.replace(/\s+/g, "").replace(/[^\d+]/g, "");
-
-    const welcomeMessage = `Welcome to Calendar App! 🚀 Your calendar is now linked to this number.
-
-To create a task, just text me something like:
-• 'Remind me to call the team tomorrow at 10am'
-• 'Set a goal to run 5 miles'
-• 'Meeting tomorrow at 3pm'
-
-What's on your mind today?`;
-
-    console.log("[PhoneUpdate] Sending welcome message to:", normalizedPhone);
-
-    // Set up timeout using AbortController
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 15000);
-
-    // Use correct Blooio endpoint
-    const response = await fetch(`https://backend.blooio.com/v2/api/chats/${normalizedPhone}/messages`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${BLOO_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text: welcomeMessage,
-      }),
-      signal: abortController.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log("[PhoneUpdate] ✅ Welcome message sent successfully:", data);
-      return true;
-    } else {
-      const error = await response.text();
-      console.log("[PhoneUpdate] ❌ Blooio API error (status " + response.status + "):", error);
-      return false;
-    }
-  } catch (error: any) {
-    console.log("[PhoneUpdate] ❌ Error sending welcome message:", error.message);
-    return false;
-  }
-}
-
 export async function POST(req: NextRequest) {
   console.log("[PhoneUpdate] Starting...");
 
@@ -157,9 +99,8 @@ export async function POST(req: NextRequest) {
     const savedPhone = updated[0].phone;
     console.log("[PhoneUpdate] Phone updated successfully! Saved:", savedPhone, "User ID:", updated[0].user_id);
 
-    // Send welcome message to the new phone via Blooio
-    console.log("[PhoneUpdate] Attempting to send welcome message...");
-    await sendWelcomeMessageViaBlooio(savedPhone);
+    // Note: Welcome message is now sent via separate /api/user/welcome-message endpoint
+    // This prevents duplicate messages
 
     return NextResponse.json({ success: true, phone: savedPhone });
 
