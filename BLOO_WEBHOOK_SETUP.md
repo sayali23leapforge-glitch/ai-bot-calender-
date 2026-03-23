@@ -243,11 +243,11 @@ Classifies messages as:
 2. **Configure Bloo:**
    - Open Bloo dashboard/settings
    - Add webhook URL: `https://<your-render-domain>/api/webhooks/bloo`
-   - (Or use: `https://calender-2-1.onrender.com/api/webhooks/bloo` if that's your domain)
+   - (Or use: `https://ai-bot-calender-uhzp.onrender.com/api/webhooks/bloo` if that's your domain)
 
 3. **Test:**
    ```bash
-   curl -X POST https://calender-2-1.onrender.com/api/webhooks/bloo \
+   curl -X POST https://ai-bot-calender-uhzp.onrender.com/api/webhooks/bloo \
      -H "Content-Type: application/json" \
      -d '{"message":"buy milk tomorrow","phone":"9881234567"}'
    ```

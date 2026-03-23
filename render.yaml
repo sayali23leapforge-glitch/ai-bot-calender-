@@ -19,7 +19,7 @@ services:
         value: production
         scope: build,runtime
       - key: NEXT_PUBLIC_WEBHOOK_URL
-        value: https://calender-2-1.onrender.com
+        value: https://ai-bot-calender-uhzp.onrender.com
         scope: build,runtime
       - key: NEXT_PUBLIC_BLUEBUBBLES_BASE_URL
         value: https://merit-remote-motion-statements.trycloudflare.com
