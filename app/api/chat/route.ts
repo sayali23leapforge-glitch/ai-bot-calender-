@@ -241,6 +241,9 @@ function isCreationRequest(message: string): boolean {
   const creationKeywords = /\b(create|make|add|set|schedule|plan|book|reserve|request|send|remind|new|build|organize|list|prepare)\b/;
   return creationKeywords.test(msg);
 }
+
+// Helper to normalize time tokens
+function normalizeTimeTokens(input: string): string {
   let s = (input || "").trim();
   if (!s) return s;
   s = s.replace(/\b(tmrw|tmrw\.|tom)\b/gi, "tomorrow");
