@@ -128,7 +128,7 @@ export function TaskListCard({
         )}
 
         {isAddingTask ? (
-          <div className="pt-2 space-y-3">
+          <div className="pt-4 space-y-3 bg-muted/30 p-4 rounded-lg">
             <Input
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
@@ -140,13 +140,13 @@ export function TaskListCard({
                 }
               }}
               placeholder="Task title"
-              className="h-9 text-sm"
+              className="h-10 text-sm w-full"
               autoFocus
             />
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <Label className="text-xs text-muted-foreground font-medium">Priority</Label>
               <Select value={newTaskPriority} onValueChange={(value) => setNewTaskPriority(value as TaskPriority)}>
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger className="h-9 text-xs w-full sm:w-auto">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -157,13 +157,32 @@ export function TaskListCard({
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={handleAddTask}
+                className="flex-1 h-9 text-sm"
+              >
+                Add Task
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsAddingTask(false)
+                  setNewTaskTitle("")
+                  setNewTaskPriority("medium")
+                }}
+                className="flex-1 h-9 text-sm"
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         ) : (
-          <div className="flex gap-2 mt-2">
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
             <Button
               variant="ghost"
               size="sm"
-              className="flex-1 justify-start text-muted-foreground hover:text-foreground hover:bg-accent transition-all duration-200 rounded-lg"
+              className="w-full sm:flex-1 justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all duration-200 rounded-lg"
               onClick={() => setIsAddingTask(true)}
             >
               <Plus className="h-4 w-4 mr-2 transition-transform duration-200 group-hover:rotate-90" />
@@ -172,11 +191,13 @@ export function TaskListCard({
             <Button
               variant="ghost"
               size="sm"
-              className="text-primary hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200 hover:scale-110"
+              className="w-full sm:w-auto text-primary hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200 hover:scale-110"
               onClick={() => setShowAICreate(true)}
               title="Quick create with AI"
             >
-              <Sparkles className="h-4 w-4" />
+              <Sparkles className="h-4 w-4 mr-2" />
+              <span className="sm:hidden">AI Create</span>
+              <span className="hidden sm:inline">AI</span>
             </Button>
           </div>
         )}
