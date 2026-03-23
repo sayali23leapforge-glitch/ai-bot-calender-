@@ -473,7 +473,7 @@ export async function POST(req: NextRequest) {
         }
 
         console.log("[BlooWebhook] Task created");
-        await sendBlooMessage(replyTo, `✅ Task created: ${analysis.title}`);
+        await sendBlooMessage(replyTo, `✅ TASK CREATED`);
         return NextResponse.json({ ok: true }, { status: 200 });
       } catch (error) {
         console.log("[BlooWebhook] Task creation error:", error);
@@ -502,7 +502,7 @@ export async function POST(req: NextRequest) {
         }
 
         console.log("[BlooWebhook] Goal created");
-        await sendBlooMessage(replyTo, `🎯 Goal created: ${analysis.title}`);
+        await sendBlooMessage(replyTo, `🎯 GOAL CREATED`);
         return NextResponse.json({ ok: true }, { status: 200 });
       } catch (error) {
         console.log("[BlooWebhook] Goal creation error:", error);
@@ -555,7 +555,7 @@ export async function POST(req: NextRequest) {
             progress: 0,
           });
 
-          await sendBlooMessage(replyTo, `✅ Task created: ${analysis.title}`);
+          await sendBlooMessage(replyTo, `✅ TASK CREATED`);
         }
 
         return NextResponse.json({ ok: true }, { status: 200 });
@@ -579,7 +579,7 @@ export async function POST(req: NextRequest) {
         }
 
         console.log("[BlooWebhook] Event created");
-        await sendBlooMessage(replyTo, `📅 Event created: ${analysis.title}`);
+        await sendBlooMessage(replyTo, `📅 EVENT CREATED`);
         return NextResponse.json({ ok: true }, { status: 200 });
       } catch (error) {
         console.log("[BlooWebhook] Event creation error:", error);
