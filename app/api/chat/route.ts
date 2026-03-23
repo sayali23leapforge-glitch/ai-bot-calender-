@@ -257,6 +257,15 @@ function normalizeTimeTokens(input: string): string {
   return s;
 }
 
+// Helper to normalize user text for LLM
+function normalizeUserTextForLLM(input: string): string {
+  let s = String(input || "").trim();
+  if (!s) return s;
+  // Apply time token normalization
+  s = normalizeTimeTokens(s);
+  return s;
+}
+
 // ============
 // Time helpers
 // ============
