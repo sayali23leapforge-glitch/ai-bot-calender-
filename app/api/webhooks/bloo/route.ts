@@ -194,8 +194,6 @@ async function getOrCreateTaskList(admin: any, userId: string): Promise<string |
 
 // ─── MAIN POST HANDLER ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const ts = new Date().toISOString();
-  console.log(`\n[Webhook] ======== INCOMING ${ts} ========`);
 
   try {
     // 1. Read body
@@ -204,27 +202,22 @@ export async function POST(req: NextRequest) {
       console.error("[Webhook] Read body error:", e?.message);
       return NextResponse.json({ ok: true }, { status: 200 });
     }
-    console.log("[Webhook] Body:", rawBody.length, "bytes | preview:", rawBody.slice(0, 600));
-
-    if (!rawBody.trim()) {
-      console.log("[Webhook] Empty body → skip");
-      return NextResponse.json({ ok: true }, { status: 200 });
-    }
+    if (!rawBody.trim()) return NextResponse.json({ ok: true }, { status: 200 });
 
     // 2. Parse JSON
     let payload: Record<string, unknown>;
     try { payload = JSON.parse(rawBody); } catch {
-      console.error("[Webhook] JSON parse failed:", rawBody.slice(0, 200));
       return NextResponse.json({ ok: true }, { status: 200 });
     }
-    console.log("[Webhook] event:", payload.event, "| keys:", Object.keys(payload).join(", "));
 
-    // 3. Only process inbound user messages — skip queued/delivered/sent/failed etc.
+    // 3. Only process inbound user messages — silently skip everything else
     const event = String(payload.event ?? "").toLowerCase();
-    if (event && event !== "message.received") {
-      console.log(`[Webhook] Skip "${payload.event}" — not an incoming message`);
+    if (event !== "message.received") {
       return NextResponse.json({ ok: true }, { status: 200 });
     }
+
+    console.log("[Webhook] ======== INCOMING", new Date().toISOString(), "========");
+    console.log("[Webhook] event:", payload.event, "| keys:", Object.keys(payload).join(", "));
 
     // 4. Extract fields
     const text = extractText(payload);
