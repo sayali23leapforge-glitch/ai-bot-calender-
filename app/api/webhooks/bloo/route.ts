@@ -396,8 +396,8 @@ export async function POST(req: NextRequest) {
       }
 
     } else {
-      // Conversational / null — friendly AI assistant response
-      const fallbackReply = "Hey there! 👋 I'm doing great, thanks for asking! 😊\n\nWhat's on your mind? I can help you:\n📝 Create tasks (\"Buy groceries\")\n📅 Schedule events (\"Meeting tomorrow at 2pm\")\n🎯 Set goals (\"Learn guitar daily\")\n\nOr just chat with me!";
+      // Conversational / null — friendly AI assistant with helpful options
+      const fallbackReply = "Hey there! 👋 I'm Cal, your calendar assistant! 📱\n\n😊 I'm doing great, thanks for asking!\n\nWhat would you like to create today?\n\n📝 **TASK** - \"Buy groceries\" or \"Call mom\"\n📅 **EVENT** - \"Meeting tomorrow at 2pm\" or \"Dinner Friday 7pm\"\n🎯 **GOAL** - \"Learn guitar daily\" or \"Exercise 3x week\"\n\nOr just chat with me! 💬";
       
       let reply = fallbackReply;
       const apiKey = process.env.GEMINI_API_KEY;
@@ -409,25 +409,35 @@ export async function POST(req: NextRequest) {
             contents: [{
               role: "user",
               parts: [{
-                text: `You are a friendly, warm calendar assistant AI named Cal. You help users create tasks, events, and goals via iMessage.
-                
-Respond naturally in 1-2 sentences with emojis. Be conversational and helpful.
-- If they ask "how are you?", reply warmly and ask what they want to create
-- If they say "hi/hey/hello", greet them warmly and ask what they need
-- Always ask what they want to create or help with
-- Keep it friendly and use emojis naturally
+                text: `You are Cal, a friendly calendar AI assistant. Users message you to create tasks, events, and goals.
 
-User message: "${text}"`
+RESPONSE RULES:
+1. Always respond warmly with emojis 😊
+2. For greetings ("hey", "hi", "hello", "how are you"), respond cheerfully then offer to help
+3. ALWAYS show 3 options with emojis:
+   📝 TASK - quick action items
+   📅 EVENT - scheduled meetings or appointments  
+   🎯 GOAL - habits or learning goals
+4. Give specific examples for each type
+5. Keep it friendly and approachable
+6. Use multiple lines and emojis generously
+
+User said: "${text}"
+
+Generate a 4-6 line friendly response with examples for each type!`
               }]
             }],
-            generationConfig: { maxOutputTokens: 100, temperature: 0.7 },
+            generationConfig: { maxOutputTokens: 150, temperature: 0.8 },
           });
           const r = res.response.text().trim();
-          if (r && r.length > 0) reply = r;
+          if (r && r.length > 30) {  // Only use if response is substantial
+            reply = r;
+          }
         } catch (e: any) {
           console.log("[Webhook] conversational Gemini failed:", e?.message);
         }
       }
+      console.log("[Webhook] Sending conversational reply:", reply.slice(0, 100));
       sendBloo(replyTo, reply, blooNumber).catch(e => console.error("[Webhook] Send error:", e?.message));
     }
 
