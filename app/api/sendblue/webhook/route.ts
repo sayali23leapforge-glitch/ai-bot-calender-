@@ -281,11 +281,44 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  console.log("[BlooWebhook] Received POST request");
-  console.log("[BlooWebhook] Content-Type:", req.headers.get("content-type"));
-  console.log("[BlooWebhook] Content-Length:", req.headers.get("content-length"));
-
   try {
+    console.log("[BlooWebhook] ===== WEBHOOK START =====");
+    console.log("[BlooWebhook] Method:", req.method);
+    console.log("[BlooWebhook] URL:", req.url);
+    console.log("[BlooWebhook] Content-Type:", req.headers.get("content-type"));
+
+    // Read raw body as text first
+    let rawBody = "";
+    try {
+      rawBody = await req.text();
+      console.log("[BlooWebhook] Raw body received, length:", rawBody?.length ?? 0);
+      if (rawBody && rawBody.length > 0) {
+        console.log("[BlooWebhook] First 500 chars:", rawBody.substring(0, 500));
+      } else {
+        console.log("[BlooWebhook] ⚠️ EMPTY BODY!");
+      }
+    } catch (textError) {
+      console.error("[BlooWebhook] Error reading text:", textError);
+      return NextResponse.json({ ok: true, error: "failed_to_read_body" }, { status: 200 });
+    }
+
+    if (!rawBody || rawBody.trim().length === 0) {
+      console.log("[BlooWebhook] ⚠️ Empty or whitespace-only body, returning");
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
+    // Parse JSON
+    let payload: BlooPayload;
+    try {
+      payload = JSON.parse(rawBody);
+      console.log("[BlooWebhook] ✅ JSON parsed successfully");
+      console.log("[BlooWebhook] Event:", payload.event);
+    } catch (parseError) {
+      console.error("[BlooWebhook] ❌ JSON parse failed:", parseError instanceof Error ? parseError.message : String(parseError));
+      return NextResponse.json({ ok: true, error: "invalid_json" }, { status: 200 });
+    }
+
+    // Validate webhook signature if configured
     const secretHeader =
       req.headers.get("x-sendblue-secret") ||
       req.headers.get("x-webhook-secret") ||
@@ -297,26 +330,6 @@ export async function POST(req: NextRequest) {
     if (expected && secretHeader && !safeEqual(secretHeader, expected)) {
       console.warn("❌ Webhook secret mismatch");
       return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-    }
-
-    // Clone request to read body
-    const cloned = req.clone();
-    const rawBody = await cloned.text();
-    console.log("[BlooWebhook] Raw body length:", rawBody.length);
-    console.log("[BlooWebhook] Raw body:", rawBody.substring(0, 500));
-
-    if (!rawBody || rawBody.trim().length === 0) {
-      console.log("[BlooWebhook] ⚠️ Empty request body");
-      return NextResponse.json({ ok: true }, { status: 200 });
-    }
-
-    let payload: BlooPayload;
-    try {
-      payload = JSON.parse(rawBody) as BlooPayload;
-    } catch (parseError) {
-      console.error("[BlooWebhook] JSON parse error:", parseError instanceof Error ? parseError.message : parseError);
-      console.log("[BlooWebhook] Failed to parse body:", rawBody.substring(0, 200));
-      return NextResponse.json({ ok: true }, { status: 200 });
     }
 
     console.log("[BlooWebhook] ===== RAW PAYLOAD START =====");
@@ -619,7 +632,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
-    console.error("[BlooWebhook] Error:", err?.message || err);
-    return NextResponse.json({ ok: false }, { status: 200 });
+    console.error("[BlooWebhook] ❌ Unhandled error:", err?.message || String(err));
+    console.error("[BlooWebhook] Stack:", err?.stack || "no stack");
+    return NextResponse.json({ ok: true, error: "caught_exception" }, { status: 200 });
   }
 }
