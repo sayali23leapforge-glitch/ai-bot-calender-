@@ -155,12 +155,33 @@ function fallbackIntent(text: string): Intent {
   }
   
   let time: string | null = null;
-  const tm = lower.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)/);
-  if (tm) {
-    let h = parseInt(tm[1]);
-    const m = tm[2] ? parseInt(tm[2]) : 0;
-    if (tm[3] === "pm" && h !== 12) h += 12;
-    if (tm[3] === "am" && h === 12) h = 0;
+  // Try multiple time patterns: "2 pm", "2pm", "14:00", "2:30 pm", "at 2"
+  let tmMatch = lower.match(/(?:at\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?/);  // HH:MM format
+  if (!tmMatch) {
+    tmMatch = lower.match(/(?:at\s+)?(\d{1,2})\s*(?::(\d{2}))?\s*(am|pm)/);  // H AM/PM or HH:MM AM/PM
+  }
+  if (!tmMatch && /(?:at\s+)?\d{1,2}(?!\d)/.test(lower)) {
+    // Try matching just a number "at 2" or "2" (without am/pm, assume PM)
+    const numMatch = lower.match(/(?:at\s+)?(\d{1,2})(?!\d)/);
+    if (numMatch) {
+      const h = parseInt(numMatch[1]);
+      // If hour is 1-11, assume PM; if 12, assume AM; if 0-23, use as-is
+      const finalH = (h >= 1 && h <= 11) ? h + 12 : h;
+      time = `${String(finalH).padStart(2, "0")}:00`;
+      tmMatch = []; // Mark as matched to skip below
+    }
+  }
+  
+  if (tmMatch && tmMatch.length > 0) {
+    let h = parseInt(tmMatch[1]);
+    const m = tmMatch[2] ? parseInt(tmMatch[2]) : 0;
+    const period = tmMatch[3];
+    
+    // Convert to 24-hour format if AM/PM specified
+    if (period) {
+      if (period === "pm" && h !== 12) h += 12;
+      if (period === "am" && h === 12) h = 0;
+    }
     time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
   
