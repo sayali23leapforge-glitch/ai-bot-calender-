@@ -27,3 +27,9 @@ services:
       - key: NEXT_PUBLIC_BLUEBUBBLES_SOCKET_URL
         value: wss://merit-remote-motion-statements.trycloudflare.com
         scope: build,runtime
+      - key: BLOO_API_KEY
+        scope: runtime
+      - key: GEMINI_API_KEY
+        scope: runtime
+      - key: SENDBLUE_WEBHOOK_SECRET
+        scope: runtime
