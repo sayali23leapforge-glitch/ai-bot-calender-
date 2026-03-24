@@ -283,8 +283,6 @@ export async function POST(req: NextRequest) {
     }
     console.log(`[Webhook] Searching ${allProfiles?.length ?? 0} profiles | blooNumber=${blooNumber} | senderPhone=${senderPhone}`);
 
-    console.log(`[Webhook] Searching ${allProfiles?.length ?? 0} profiles | blooNumber=${blooNumber} | senderPhone=${senderPhone}`);
-
     let userId: string | null = null;
 
     // PRIMARY MATCH: Try to find user by Bloo bound number (internal_id from Bloo)
@@ -336,19 +334,16 @@ export async function POST(req: NextRequest) {
       
       // Do DB insert in background (non-blocking)
       getOrCreateTaskList(admin, userId).then(listId => {
-        if (!listId) {
-          console.error("[Webhook] Could not create task list");
-          return;
-        }
+        if (!listId) return;
         admin.from("tasks").insert({
           user_id: userId, list_id: listId,
           title: intent.title.slice(0, 200),
-          notes: `Via iMessage: "${text.slice(0, 80)}"`,  // Keep short context in notes only
+          notes: `Via iMessage: "${text.slice(0, 80)}"`,
           due_date: intent.date ?? null,
           due_time: intent.time ?? null,
           is_completed: false, is_starred: false,
           position: 0, priority: "medium", progress: 0,
-        }).catch(err => console.error("[Webhook] task insert error:", err?.message));
+        });
       });
 
     } else if (intent.type === "goal") {
@@ -359,10 +354,10 @@ export async function POST(req: NextRequest) {
       admin.from("goals").insert({
         user_id: userId,
         title: intent.title.slice(0, 200),
-        description: `Via iMessage: "${text.slice(0, 80)}"`,  // Keep short context in notes only
+        description: `Via iMessage: "${text.slice(0, 80)}"`,
         category: "personal", priority: "medium",
         progress: 0, target_date: intent.date ?? null,
-      }).catch(err => console.error("[Webhook] goal insert error:", err?.message));
+      });
 
     } else if (intent.type === "event") {
       if (!intent.date) {
@@ -375,7 +370,7 @@ export async function POST(req: NextRequest) {
             admin.from("tasks").insert({
               user_id: userId, list_id: listId, title: intent.title.slice(0, 200), notes: `Via iMessage`,
               due_time: intent.time ?? null, is_completed: false, is_starred: false, position: 0, priority: "medium", progress: 0
-            }).catch(err => console.error("[Webhook] task insert error:", err?.message));
+            });
           }
         });
       } else {
@@ -387,11 +382,11 @@ export async function POST(req: NextRequest) {
         admin.from("calendar_events").insert({
           user_id: userId,
           title: intent.title.slice(0, 200),
-          description: `Via iMessage: "${text.slice(0, 80)}"`,  // Keep short context in description only
+          description: `Via iMessage: "${text.slice(0, 80)}"`,
           event_date: intent.date,
           start_time: intent.time ?? null,
           is_completed: false, category: "other", priority: "medium",
-        }).catch(err => console.error("[Webhook] event insert error:", err?.message));
+        });
       }
 
     } else {
