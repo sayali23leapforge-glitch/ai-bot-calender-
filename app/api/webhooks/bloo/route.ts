@@ -36,45 +36,41 @@ function safeEqual(a?: string | null, b?: string | null) {
 
 function normalizePhone(phoneInput: string): string {
   console.log(`[BlooWebhook] Normalizing phone: ${phoneInput}`);
+  
+  // Remove all spaces and non-digit characters (except +)
   let cleaned = phoneInput
     .replace(/\s+/g, "")
     .replace(/[^\d+]/g, "");
 
+  console.log(`[BlooWebhook] After cleaning: ${cleaned}`);
+
+  // If already has +, keep it as-is
   if (cleaned.startsWith("+")) {
     const normalized = "+" + cleaned.slice(1).replace(/\D/g, "");
-    console.log(`[BlooWebhook] Already prefixed: ${normalized}`);
+    console.log(`[BlooWebhook] Already has +: ${normalized}`);
     return normalized;
   }
 
+  // Remove any remaining +
   cleaned = cleaned.replace(/\+/g, "");
 
-  if (cleaned.length === 10) {
-    const result = "+91" + cleaned;
-    console.log(`[BlooWebhook] 10-digit Indian: ${result}`);
-    return result;
-  }
-
-  if (cleaned.length === 11 && cleaned.startsWith("1")) {
-    const result = "+" + cleaned;
-    console.log(`[BlooWebhook] 11-digit US: ${result}`);
-    return result;
-  }
-
-  if (cleaned.length === 12 && cleaned.startsWith("91")) {
-    const result = "+" + cleaned;
-    console.log(`[BlooWebhook] 12-digit Indian: ${result}`);
-    return result;
-  }
-
+  // Now only digits - apply logic matching /api/user/phone endpoint
   if (cleaned.length > 10) {
+    // Has country code, just add +
     const result = "+" + cleaned;
-    console.log(`[BlooWebhook] Custom format: ${result}`);
+    console.log(`[BlooWebhook] ${cleaned.length} digits (has country code): ${result}`);
+    return result;
+  } else if (cleaned.length === 10) {
+    // 10 digits - default to +1 (US) - SAME AS WEB APP
+    const result = "+1" + cleaned;
+    console.log(`[BlooWebhook] 10 digits (defaulting to +1): ${result}`);
+    return result;
+  } else {
+    // Less than 10 digits, add + anyway
+    const result = "+" + cleaned;
+    console.log(`[BlooWebhook] ${cleaned.length} digits (short): ${result}`);
     return result;
   }
-
-  const result = "+91" + cleaned;
-  console.log(`[BlooWebhook] Fallback (short): ${result}`);
-  return result;
 }
 
 function extractText(payload: BlooPayload): string | null {
