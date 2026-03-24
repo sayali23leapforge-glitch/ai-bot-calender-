@@ -138,17 +138,25 @@ function fallbackIntent(text: string): Intent {
   const { today, tomorrow } = getTodayTomorrow();
   const lower = text.toLowerCase().trim();
   
-  // Very short casual messages (hi, hey, hello, thanks, etc) → conversational
-  if (text.length <= 20 && /^(hi|hey|hello|thanks|thanx|ok|okay|cool|good|sure|yes|no|right|lol|haha)$/i.test(text.trim())) {
-    return { type: null, title: text, date: null, time: null };
+  // CONVERSATIONAL: Questions, greetings, acknowledgments
+  if (/^(hi|hey|hello|thanks|thanx|ok|okay|cool|good|yeah|sure|yes|no|right|lol|haha|awesome|nice)$/i.test(lower)
+    || /\?$/.test(lower.trim())  // Ends with ? → question
+    || /\b(how are you|how are you doing|what's up|sup|yo|what's new|how's it|tell me|what time|what date|hello there|hey there)\b/i.test(lower)) {
+    return { type: null, title: text, date: null, time: null };  // Conversational
   }
   
   const isGoal = /\b(learn|study|master|improve|practice|habit|daily|every day|each day|consistently)\b/.test(lower);
   const isEvent = /\b(meeting|appointment|dentist|doctor|lunch|dinner|call with|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(lower)
     || /\d{1,2}:\d{2}|\d\s*(am|pm)/.test(lower);
-  let type: Intent["type"] = "task";
+  
+  // Check for TASK keywords (buy, call, fix, make, get, send, etc.)
+  const isTask = /\b(buy|get|purchase|send|call|email|message|write|create|make|fix|repair|clean|cook|do|check|review|complete|finish|start|begin|try|build|process|handle|organize|prepare|setup)\b/i.test(lower);
+  
+  let type: Intent["type"] = null;  // DEFAULT: conversational (no task creation unless keywords found)
   if (isGoal && !isEvent) type = "goal";
   else if (isEvent) type = "event";
+  else if (isTask) type = "task";  // Only task if explicit task keywords found
+  
   let date: string | null = null;
   if (lower.includes("tomorrow")) date = tomorrow;
   else if (lower.includes("today")) date = today;
