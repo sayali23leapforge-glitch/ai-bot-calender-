@@ -282,6 +282,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   console.log("[BlooWebhook] Received POST request");
+  console.log("[BlooWebhook] Content-Type:", req.headers.get("content-type"));
+  console.log("[BlooWebhook] Content-Length:", req.headers.get("content-length"));
 
   try {
     const secretHeader =
@@ -297,7 +299,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
 
-    const payload = (await req.json()) as BlooPayload;
+    // Clone request to read body
+    const cloned = req.clone();
+    const rawBody = await cloned.text();
+    console.log("[BlooWebhook] Raw body length:", rawBody.length);
+    console.log("[BlooWebhook] Raw body:", rawBody.substring(0, 500));
+
+    if (!rawBody || rawBody.trim().length === 0) {
+      console.log("[BlooWebhook] ⚠️ Empty request body");
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
+    let payload: BlooPayload;
+    try {
+      payload = JSON.parse(rawBody) as BlooPayload;
+    } catch (parseError) {
+      console.error("[BlooWebhook] JSON parse error:", parseError instanceof Error ? parseError.message : parseError);
+      console.log("[BlooWebhook] Failed to parse body:", rawBody.substring(0, 200));
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
 
     console.log("[BlooWebhook] ===== RAW PAYLOAD START =====");
     console.log("[BlooWebhook] Full Payload:", JSON.stringify(payload, null, 2));
