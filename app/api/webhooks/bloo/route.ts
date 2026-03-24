@@ -323,87 +323,95 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true }, { status: 200 });
     }
 
-    // 6. Analyze intent
-    const intent = await analyzeIntent(text);
-    console.log("[Webhook] Intent:", JSON.stringify(intent));
+    // 6. Send immediate response, then process everything else in background
+    // This ensures webhook returns in <100ms for speed
+    
+    // Use fallback intent for INSTANT response (no Gemini wait)
+    const quickIntent = fallbackIntent(text);
+    console.log("[Webhook] Quick Intent (fallback):", JSON.stringify(quickIntent));
 
-    // 7. Send response immediately, then create entry in background (FIRE-AND-FORGET)
-    if (intent.type === "task") {
-      // Send confirmation instantly (don't wait for DB)
-      sendBloo(replyTo, `✅ Task created: "${intent.title}"`, blooNumber).catch(e => console.error("[Webhook] Send error:", e?.message));
-      
-      // Do DB insert in background (non-blocking)
-      getOrCreateTaskList(admin, userId).then(listId => {
-        if (!listId) return;
-        admin.from("tasks").insert({
-          user_id: userId, list_id: listId,
-          title: intent.title.slice(0, 200),
-          notes: `Via iMessage: "${text.slice(0, 80)}"`,
-          due_date: intent.date ?? null,
-          due_time: intent.time ?? null,
-          is_completed: false, is_starred: false,
-          position: 0, priority: "medium", progress: 0,
-        });
-      });
+    // Send response based on quick intent (instant, no waiting)
+    if (quickIntent.type === "task") {
+      sendBloo(replyTo, `✅ Task created: "${quickIntent.title}"`, blooNumber);
+    } else if (quickIntent.type === "goal") {
+      sendBloo(replyTo, `🎯 Goal set: "${quickIntent.title}"`, blooNumber);
+    } else if (quickIntent.type === "event") {
+      if (quickIntent.date) {
+        const dateStr = quickIntent.time ? `${quickIntent.date} at ${quickIntent.time}` : quickIntent.date;
+        sendBloo(replyTo, `📅 Event added: "${quickIntent.title}" — ${dateStr}`, blooNumber);
+      } else {
+        sendBloo(replyTo, `✅ Added: "${quickIntent.title}" (include a date like "tomorrow" or "Friday" to create a calendar event)`, blooNumber);
+      }
+    } else {
+      // Conversational - send fallback immediately
+      const fallbackReply = "Hey there! 👋 I'm Cal, your calendar assistant! 📱\n\n😊 I'm doing great, thanks for asking!\n\nWhat would you like to create today?\n\n📝 **TASK** - \"Buy groceries\" or \"Call mom\"\n📅 **EVENT** - \"Meeting tomorrow at 2pm\" or \"Dinner Friday 7pm\"\n🎯 **GOAL** - \"Learn guitar daily\" or \"Exercise 3x week\"\n\nOr just chat with me! 💬";
+      sendBloo(replyTo, fallbackReply, blooNumber);
+    }
 
-    } else if (intent.type === "goal") {
-      // Send confirmation instantly (don't wait for DB)
-      sendBloo(replyTo, `🎯 Goal set: "${intent.title}"`, blooNumber).catch(e => console.error("[Webhook] Send error:", e?.message));
-      
-      // Do DB insert in background (non-blocking)
-      admin.from("goals").insert({
-        user_id: userId,
-        title: intent.title.slice(0, 200),
-        description: `Via iMessage: "${text.slice(0, 80)}"`,
-        category: "personal", priority: "medium",
-        progress: 0, target_date: intent.date ?? null,
-      });
-
-    } else if (intent.type === "event") {
-      if (!intent.date) {
-        // No date → save as task and send response instantly
-        sendBloo(replyTo, `✅ Added: "${intent.title}" (include a date like "tomorrow" or "Friday" to create a calendar event)`, blooNumber).catch(e => console.error("[Webhook] Send error:", e?.message));
+    // NOW do heavy lifting in background (Gemini analysis + DB insert)
+    // This does NOT block the webhook response
+    (async () => {
+      try {
+        // Analyze with Gemini for more accurate detection (in background)
+        const geminiIntent = await analyzeIntent(text);
+        console.log("[Webhook] Gemini Intent:", JSON.stringify(geminiIntent));
         
-        // Do DB insert in background
-        getOrCreateTaskList(admin, userId).then(listId => {
+        // Use Gemini result if it's different from fallback and more confident
+        const finalIntent = geminiIntent.type !== null ? geminiIntent : quickIntent;
+
+        // 7. Create database entries based on final intent
+        if (finalIntent.type === "task") {
+          const listId = await getOrCreateTaskList(admin, userId);
           if (listId) {
             admin.from("tasks").insert({
-              user_id: userId, list_id: listId, title: intent.title.slice(0, 200), notes: `Via iMessage`,
-              due_time: intent.time ?? null, is_completed: false, is_starred: false, position: 0, priority: "medium", progress: 0
+              user_id: userId, list_id: listId,
+              title: finalIntent.title.slice(0, 200),
+              notes: `Via iMessage: "${text.slice(0, 80)}"`,
+              due_date: finalIntent.date ?? null,
+              due_time: finalIntent.time ?? null,
+              is_completed: false, is_starred: false,
+              position: 0, priority: "medium", progress: 0,
             });
           }
-        });
-      } else {
-        // Has date → send response instantly
-        const dateStr = intent.time ? `${intent.date} at ${intent.time}` : intent.date;
-        sendBloo(replyTo, `📅 Event added: "${intent.title}" — ${dateStr}`, blooNumber).catch(e => console.error("[Webhook] Send error:", e?.message));
-        
-        // Do DB insert in background
-        admin.from("calendar_events").insert({
-          user_id: userId,
-          title: intent.title.slice(0, 200),
-          description: `Via iMessage: "${text.slice(0, 80)}"`,
-          event_date: intent.date,
-          start_time: intent.time ?? null,
-          is_completed: false, category: "other", priority: "medium",
-        });
-      }
-
-    } else {
-      // Conversational / null — friendly AI assistant with helpful options
-      const fallbackReply = "Hey there! 👋 I'm Cal, your calendar assistant! 📱\n\n😊 I'm doing great, thanks for asking!\n\nWhat would you like to create today?\n\n📝 **TASK** - \"Buy groceries\" or \"Call mom\"\n📅 **EVENT** - \"Meeting tomorrow at 2pm\" or \"Dinner Friday 7pm\"\n🎯 **GOAL** - \"Learn guitar daily\" or \"Exercise 3x week\"\n\nOr just chat with me! 💬";
-      
-      let reply = fallbackReply;
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (apiKey) {
-        try {
-          const genAI = new GoogleGenerativeAI(apiKey);
-          const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-          const res = await model.generateContent({
-            contents: [{
-              role: "user",
-              parts: [{
-                text: `You are Cal, a friendly calendar AI assistant. Users message you to create tasks, events, and goals.
+        } else if (finalIntent.type === "goal") {
+          admin.from("goals").insert({
+            user_id: userId,
+            title: finalIntent.title.slice(0, 200),
+            description: `Via iMessage: "${text.slice(0, 80)}"`,
+            category: "personal", priority: "medium",
+            progress: 0, target_date: finalIntent.date ?? null,
+          });
+        } else if (finalIntent.type === "event") {
+          if (finalIntent.date) {
+            admin.from("calendar_events").insert({
+              user_id: userId,
+              title: finalIntent.title.slice(0, 200),
+              description: `Via iMessage: "${text.slice(0, 80)}"`,
+              event_date: finalIntent.date,
+              start_time: finalIntent.time ?? null,
+              is_completed: false, category: "other", priority: "medium",
+            });
+          } else {
+            const listId = await getOrCreateTaskList(admin, userId);
+            if (listId) {
+              admin.from("tasks").insert({
+                user_id: userId, list_id: listId, title: finalIntent.title.slice(0, 200), notes: `Via iMessage`,
+                due_time: finalIntent.time ?? null, is_completed: false, is_starred: false, position: 0, priority: "medium", progress: 0
+              });
+            }
+          }
+        } else if (finalIntent.type === null) {
+          // Conversational - get AI response in background
+          const apiKey = process.env.GEMINI_API_KEY;
+          if (apiKey) {
+            try {
+              const genAI = new GoogleGenerativeAI(apiKey);
+              const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+              const res = await model.generateContent({
+                contents: [{
+                  role: "user",
+                  parts: [{
+                    text: `You are Cal, a friendly calendar AI assistant. Users message you to create tasks, events, and goals.
 
 RESPONSE RULES:
 1. Always respond warmly with emojis 😊
@@ -419,23 +427,26 @@ RESPONSE RULES:
 User said: "${text}"
 
 Generate a 4-6 line friendly response with examples for each type!`
-              }]
-            }],
-            generationConfig: { maxOutputTokens: 150, temperature: 0.8 },
-          });
-          const r = res.response.text().trim();
-          if (r && r.length > 30) {  // Only use if response is substantial
-            reply = r;
+                  }]
+                }],
+                generationConfig: { maxOutputTokens: 150, temperature: 0.8 },
+              });
+              const r = res.response.text().trim();
+              if (r && r.length > 30) {
+                // Send improved conversational response
+                sendBloo(replyTo, r, blooNumber);
+              }
+            } catch (e: any) {
+              console.log("[Webhook] Background conversational Gemini failed:", e?.message);
+            }
           }
-        } catch (e: any) {
-          console.log("[Webhook] conversational Gemini failed:", e?.message);
         }
+      } catch (err: any) {
+        console.error("[Webhook] Background processing error:", err?.message);
       }
-      console.log("[Webhook] Sending conversational reply:", reply.slice(0, 100));
-      sendBloo(replyTo, reply, blooNumber).catch(e => console.error("[Webhook] Send error:", e?.message));
-    }
+    })(); // Start background task but don't wait
 
-    console.log("[Webhook] ======== DONE ========\n");
+    console.log("[Webhook] ======== DONE (instant response sent) ========\n");
     return NextResponse.json({ ok: true }, { status: 200 });
 
   } catch (err: any) {
