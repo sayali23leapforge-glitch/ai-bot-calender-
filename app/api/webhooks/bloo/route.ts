@@ -40,22 +40,27 @@ function digitsOnly(s: string): string {
 }
 
 function normalizePhone(raw: string): string {
+  // Normalize phone to +<digits> format for consistent API calls
+  // Handles: " +1 (626) 742-3142 ", "+1(626)742-3142", "6267423142", etc.
   const cleaned = raw.replace(/\s+/g, "").replace(/[^\d+]/g, "");
   if (cleaned.startsWith("+")) return "+" + digitsOnly(cleaned);
   const digits = digitsOnly(cleaned);
-  if (digits.length >= 11) return "+" + digits;
-  if (digits.length === 10) return "+1" + digits;
-  return "+" + digits;
+  if (digits.length >= 11) return "+" + digits;  // Assume already has country code
+  if (digits.length === 10) return "+1" + digits;  // US number without country code
+  return "+" + digits;  // Fallback
 }
 
 function phonesMatch(a: string, b: string): boolean {
+  // Compare two phone numbers flexibly - handles different formats:
+  // +1234567890, 1234567890, (123) 456-7890, +1 (626) 742-3142, etc.
+  // All normalized to digit comparison (full comparison + last 10 digits fallback)
   if (!a || !b) return false;
   const da = digitsOnly(a);
   const db = digitsOnly(b);
-  if (da === db) return true;
-  const la = da.slice(-10);
+  if (da === db) return true;  // Exact digit match
+  const la = da.slice(-10);    // Last 10 digits
   const lb = db.slice(-10);
-  return la.length === 10 && la === lb;
+  return la.length === 10 && la === lb;  // Fallback: last 10 digits match
 }
 
 function getTodayTomorrow() {
@@ -245,11 +250,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true }, { status: 200 });
     }
 
-    const replyTo = senderPhone;
+    const replyTo = senderPhone;  // Send reply back to the personal phone number
 
     // 5. Find user
-    // PRIMARY: match internal_id → bloo_bound_number (user saved their Bloo number in app)
-    // FALLBACK: match external_id → phone (user saved their personal phone in app)
+    // ┌─ USER PROFILE LOOKUP (Works for ANY user with ANY phone numbers) ─┐
+    // │                                                                    │
+    // │ Bloo payload contains:                                           │
+    // │  - external_id = personal phone that sent message                │
+    // │  - internal_id = Bloo bound number message was sent TO           │
+    // │                                                                    │
+    // │ Profile database contains:                                       │
+    // │  - phone = personal phone number user registered                 │
+    // │  - bloo_bound_number = Bloo number user registered               │
+    // │                                                                    │
+    // │ MATCHING STRATEGY:                                               │
+    // │  1. PRIMARY: Match internal_id with bloo_bound_number            │
+    // │     (most reliable — Bloo number is unique per device)           │
+    // │  2. FALLBACK: Match external_id with phone                       │
+    // │     (if no Bloo match, try personal phone)                       │
+    // │  3. If still no match: Tell user to update settings              │
+    // │                                                                    │
+    // └────────────────────────────────────────────────────────────────────┘
     const admin = getSupabaseAdminClient();
     const { data: allProfiles, error: dbErr } = await admin
       .from("user_profiles")
@@ -265,23 +286,27 @@ export async function POST(req: NextRequest) {
 
     let userId: string | null = null;
 
+    // PRIMARY MATCH: Try to find user by Bloo bound number (internal_id from Bloo)
+    // This is the most reliable match because each Bloo device/channel has one bound number
     if (blooNumber && allProfiles) {
       const normBloo = normalizePhone(blooNumber);
       for (const p of allProfiles) {
         if (p.bloo_bound_number && phonesMatch(normBloo, p.bloo_bound_number)) {
           userId = p.user_id;
-          console.log(`[Webhook] ✅ Matched bloo_bound_number "${p.bloo_bound_number}" → user ${p.user_id}`);
+          console.log(`[Webhook] ✅ PRIMARY MATCH: bloo_bound_number "${p.bloo_bound_number}" → user ${p.user_id}`);
           break;
         }
       }
     }
 
+    // FALLBACK MATCH: If no Bloo match, try to find user by personal phone (external_id from Bloo)
+    // This catches users who may not have registered their Bloo number yet
     if (!userId && allProfiles) {
       const normSender = normalizePhone(senderPhone);
       for (const p of allProfiles) {
         if (p.phone && phonesMatch(normSender, p.phone)) {
           userId = p.user_id;
-          console.log(`[Webhook] ✅ Matched phone "${p.phone}" → user ${p.user_id}`);
+          console.log(`[Webhook] ✅ FALLBACK MATCH: phone "${p.phone}" → user ${p.user_id}`);
           break;
         }
       }
