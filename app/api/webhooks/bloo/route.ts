@@ -244,10 +244,10 @@ function fallbackIntent(text: string): Intent {
   }
   
   let time: string | null = null;
-  // Try multiple time patterns: "2 pm", "2pm", "14:00", "2:30 pm", "at 2"
-  let tmMatch = lower.match(/(?:at\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?/);  // HH:MM format
+  // Try multiple time patterns: "2 pm", "2pm", "2 p.m.", "14:00", "2:30 pm", "at 2"
+  let tmMatch = lower.match(/(?:at\s+)?(\d{1,2}):(\d{2})\s*(?:p\.m\.|pm|a\.m\.|am)?/i);  // HH:MM format with optional am/pm
   if (!tmMatch) {
-    tmMatch = lower.match(/(?:at\s+)?(\d{1,2})\s*(?::(\d{2}))?\s*(am|pm)/);  // H AM/PM or HH:MM AM/PM
+    tmMatch = lower.match(/(?:at\s+)?(\d{1,2})\s*(?::(\d{2}))?\s*(?:p\.m\.|pm|a\.m\.|am)/i);  // H AM/PM or HH:MM AM/PM
   }
   if (!tmMatch && /(?:at\s+)?\d{1,2}(?!\d)/.test(lower)) {
     // Try matching just a number "at 2" or "2" (without am/pm, assume PM)
@@ -264,12 +264,15 @@ function fallbackIntent(text: string): Intent {
   if (tmMatch && tmMatch.length >= 1) {
     let h = parseInt(tmMatch[1]);
     const m = tmMatch[2] ? parseInt(tmMatch[2]) : 0;
-    const period = tmMatch[3];
+    let period = tmMatch[3] ? tmMatch[3].toLowerCase() : "";
+    
+    // Normalize period: convert "p.m." → "pm", "a.m." → "am"
+    period = period.replace(/\./g, "");
     
     // Convert to 24-hour format if AM/PM specified
     if (period) {
-      if (period === "pm" && h !== 12) h += 12;
-      if (period === "am" && h === 12) h = 0;
+      if ((period === "pm" || period === "p") && h !== 12) h += 12;
+      if ((period === "am" || period === "a") && h === 12) h = 0;
     }
     time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
