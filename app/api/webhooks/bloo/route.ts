@@ -101,6 +101,21 @@ function extractBlooNumber(p: Record<string, unknown>): string | null {
 
 function extractAudioUrl(p: Record<string, unknown>): string | null {
   // Check for audio attachment in Bloo payload
+  
+  // PRIMARY: Check attachments array (Bloo stores URLs here)
+  if (Array.isArray(p.attachments)) {
+    for (const att of p.attachments) {
+      if (att && typeof att === "object") {
+        const url = (att as any).url;
+        if (typeof url === "string" && url.length > 10 && (url.includes("http") || url.includes("/"))) {
+          console.log("[Webhook] Found audio URL in attachments:", url.slice(0, 50) + "...");
+          return url;
+        }
+      }
+    }
+  }
+  
+  // FALLBACK: Check other possible fields
   const candidates = [
     p.audio_url, p.voice_url, p.media_url, p.attachment_url,
     (p.media as any)?.url, (p.attachment as any)?.url,
