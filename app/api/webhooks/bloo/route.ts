@@ -168,11 +168,11 @@ function fallbackIntent(text: string): Intent {
       // If hour is 1-11, assume PM; if 12, assume AM; if 0-23, use as-is
       const finalH = (h >= 1 && h <= 11) ? h + 12 : h;
       time = `${String(finalH).padStart(2, "0")}:00`;
-      tmMatch = []; // Mark as matched to skip below
+      tmMatch = null; // Mark as matched to skip below
     }
   }
   
-  if (tmMatch && tmMatch.length > 0) {
+  if (tmMatch && tmMatch.length >= 1) {
     let h = parseInt(tmMatch[1]);
     const m = tmMatch[2] ? parseInt(tmMatch[2]) : 0;
     const period = tmMatch[3];
