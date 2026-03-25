@@ -477,17 +477,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // If still no text, check for image and scan it
-    if (!text) {
-      imageUrl = extractImageUrl(payload);
-      if (imageUrl) {
-        console.log("[Webhook] 📸 Image detected, scanning now...");
-        imageData = await scanImage(imageUrl);
-        if (imageData && imageData.title) {
+    // ALWAYS check for image (even if text exists) - image data should enhance/override text
+    imageUrl = extractImageUrl(payload);
+    if (imageUrl) {
+      console.log("[Webhook] 📸 Image detected, scanning now...");
+      imageData = await scanImage(imageUrl);
+      if (imageData && imageData.title) {
+        console.log("[Webhook] 📸 Image scanned → Title: " + imageData.title);
+        // If image has a real event name (not a command), use it as primary text
+        if (imageData.title.length > 5 && !imageData.title.toLowerCase().includes("schedule")) {
           text = imageData.title;
-          console.log("[Webhook] 📸 Image scanned → Title: " + text);
+          console.log("[Webhook] 📸 Using image title as primary text");
         }
       }
+    }
+
+    // If still no text after audio/image, use image title as fallback
+    if (!text && imageData && imageData.title) {
+      text = imageData.title;
+      console.log("[Webhook] 📸 Using image title (fallback)");
     }
 
     // Log what we found
@@ -605,9 +613,16 @@ export async function POST(req: NextRequest) {
       }
       // Use image type if detected
       if (imageData.type) finalIntent.type = imageData.type;
-      // Use image dates/times if available
-      if (imageData.date) finalIntent.date = imageData.date;
+      
+      // For dates/times: Image provides defaults, but user's explicit date context ("tomorrow", "Friday") should override
+      // Only use image date if user didn't specify a date in their text
+      const userHasDateContext = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(payload.text ?? "");
+      if (imageData.date && !userHasDateContext) {
+        finalIntent.date = imageData.date;  // Use image date only if user didn't specify
+      }
+      // Use image time (user can provide "tomorrow" for date + image for time)
       if (imageData.time) finalIntent.time = imageData.time;
+      
       if (imageData.description) finalDescription = `${source}: ${imageData.description}`;
     }
 
