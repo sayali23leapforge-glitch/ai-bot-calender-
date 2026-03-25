@@ -365,14 +365,15 @@ export async function POST(req: NextRequest) {
     const blooNumber = extractBlooNumber(payload);    // internal_id → identifies WHICH user
     let audioUrl: string | null = null;
 
-    // If no text, extract audio URL (but DON'T transcribe yet - do in background for 1-sec response)
+    // If no text, extract audio URL and transcribe IMMEDIATELY (synchronous)
     if (!text) {
       audioUrl = extractAudioUrl(payload);
-      console.log("[Webhook] No text found. Checking for audio...");
-      console.log("[Webhook] audioUrl extracted:", audioUrl);
       if (audioUrl) {
-        console.log("[Webhook] 🎙️ Voice message detected, will transcribe in background...");
-        text = "🎙️ Voice message (transcribing...)";  // Placeholder for quick DB entry
+        console.log("[Webhook] 🎙️ Voice message detected, transcribing now...");
+        text = await transcribeAudio(audioUrl);
+        if (text) {
+          console.log("[Webhook] 🎙️ Voice → Text: " + text);
+        }
       }
     }
 
@@ -623,41 +624,6 @@ Generate a 4-6 line friendly response with examples for each type!`
         console.error("[Webhook] Background Gemini error:", err?.message);
       }
     })();
-
-    // 10. BACKGROUND: If voice message, transcribe in background (don't block main response)
-    if (audioUrl && text === "🎙️ Voice message (transcribing...)") {
-      (async () => {
-        try {
-          console.log("[Webhook] 🎙️ Background: Starting audio transcription...");
-          const transcribedText = await transcribeAudio(audioUrl);
-          if (transcribedText) {
-            console.log("[Webhook] 🎙️ Voice → Text: " + transcribedText);
-            // Now analyze the actual transcribed text with Gemini for refined intent
-            const apiKey = process.env.GEMINI_API_KEY;
-            if (apiKey) {
-              const { today, tomorrow } = getTodayTomorrow();
-              const genAI = new GoogleGenerativeAI(apiKey);
-              const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-              const res = await model.generateContent({
-                contents: [{
-                  role: "user",
-                  parts: [{
-                    text: `Classify this message. Return ONLY valid JSON, no markdown, no extra text.\n\nMessage: "${transcribedText}"\n\nJSON format:\n{"type":"task","title":"concise title","date":null,"time":null}\n\ntype values:\n- "task" = action to do (buy anything, call someone, fix something, any todo)\n- "goal" = habit or learning (learn piano, exercise daily, lose weight)\n- "event" = specific date/time meeting (meeting tomorrow 3pm, dentist Friday)\n- null = pure conversation/question (hi, how are you, what time is it)\n\nToday=${today}, Tomorrow=${tomorrow}`
-                  }]
-                }],
-                generationConfig: { maxOutputTokens: 500, temperature: 0.1 },
-              });
-              const raw = res.response.text().trim().replace(/```json|```/g, "").trim();
-              const refined = JSON.parse(raw);
-              console.log("[Webhook] 🎙️ Refined intent from audio:", refined);
-              // Note: Could update DB with transcribed text here if needed
-            }
-          }
-        } catch (err: any) {
-          console.error("[Webhook] Background transcription error:", err?.message);
-        }
-      })();
-    }
 
     console.log("[Webhook] ======== DONE (response sent) ========\n");
     return NextResponse.json({ ok: true }, { status: 200 });
