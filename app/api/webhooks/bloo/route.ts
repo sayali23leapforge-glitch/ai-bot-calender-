@@ -211,7 +211,7 @@ async function transcribeAudio(audioUrl: string): Promise<string | null> {
 }
 
 // ─── IMAGE SCANNING ───────────────────────────────────────────────────────────
-async function scanImage(imageUrl: string): Promise<{ title: string; description: string; date?: string; time?: string } | null> {
+async function scanImage(imageUrl: string): Promise<{ title: string; description: string; date?: string; time?: string; type?: "task" | "goal" | "event" } | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.log("[Webhook] GEMINI_API_KEY not set for image scanning");
@@ -253,19 +253,19 @@ async function scanImage(imageUrl: string): Promise<{ title: string; description
             },
           },
           {
-            text: `Analyze this image and extract event/task/goal details. Return ONLY valid JSON, no markdown.
+            text: `Analyze this image and extract event/task/goal details. Return ONLY valid JSON, no markdown, no explanation.
 
-JSON format:
-{"title":"event/task/goal name","description":"what is it about","date":null,"time":null,"type":"event|task|goal"}
+CRITICAL INSTRUCTIONS:
+1. Look for text fields like "EVENT NAME HERE", "Title:", "Task:", "Goal:" - use EXACTLY what you see
+2. For times like "10:00 AM - 12:00 PM" or "10:00 AM - 12:00 PM", extract ONLY the START time (10:00)
+3. For dates, look for explicit dates mentioned (e.g., "26 March 2026") and convert to YYYY-MM-DD
+4. If you see a calendared event/task/goal, it's type="event" for scheduled items, type="task" for action items, type="goal" for habits
+5. Extract the actual visible text, not generic placeholders
 
-Extract:
-- "title": Main event/task/goal name (6-20 words max)
-- "description": Brief what it's about (1-2 sentences)
-- "date": If date visible (YYYY-MM-DD format), else null
-- "time": If time visible (HH:MM format, 24-hour), else null
-- "type": One of "event" (scheduled meeting/appointment), "task" (action item), "goal" (habit/learning)
+JSON format (MUST be valid JSON):
+{"title":"exact title from image","description":"brief description","date":"YYYY-MM-DD or null","time":"HH:MM or null","type":"event|task|goal"}
 
-Return ONLY the JSON object, nothing else.`
+Return ONLY the JSON object, nothing else - no markdown, no extra text.`
           }
         ],
       }],
@@ -463,7 +463,7 @@ export async function POST(req: NextRequest) {
     const blooNumber = extractBlooNumber(payload);    // internal_id → identifies WHICH user
     let audioUrl: string | null = null;
     let imageUrl: string | null = null;
-    let imageData: { title: string; description: string; date?: string; time?: string } | null = null;
+    let imageData: { title: string; description: string; date?: string; time?: string; type?: "task" | "goal" | "event" } | null = null;
 
     // If no text, check for audio URL and transcribe IMMEDIATELY (synchronous)
     if (!text) {
@@ -599,7 +599,13 @@ export async function POST(req: NextRequest) {
     let finalDescription = `${source}: "${text.slice(0, 80)}"`;
     
     if (imageData) {
-      // Use image dates/times if available, otherwise keep quickIntent values
+      // Prefer image title if it looks like a real event/task title (longer, not just user command)
+      if (imageData.title && imageData.title.length > 5 && !imageData.title.toLowerCase().includes("schedule")) {
+        finalIntent.title = imageData.title;
+      }
+      // Use image type if detected
+      if (imageData.type) finalIntent.type = imageData.type;
+      // Use image dates/times if available
       if (imageData.date) finalIntent.date = imageData.date;
       if (imageData.time) finalIntent.time = imageData.time;
       if (imageData.description) finalDescription = `${source}: ${imageData.description}`;
